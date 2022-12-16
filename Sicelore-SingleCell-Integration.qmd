@@ -1,0 +1,234 @@
+##CombineSeuratandSicelore Function
+```{r}
+combineSeuratandSicelore<-function(SeuratObj, snpMatrixFile, snpName){
+  snpmatrix<-read.csv2(file = snpMatrixFile, sep = "\t")
+
+  #subset mutations where geneId = DNMT3A_HF1 
+  snpmatrix<-snpmatrix[snpmatrix$geneId==snpName,]
+  
+  snpmatrix$nuc<-substring(snpmatrix$transcriptId, nchar(snpmatrix$transcriptId)-0)
+  snpmatrix$geneId<-NULL
+  snpmatrix$transcriptId<-NULL
+  snpmatrix$nbExons<-NULL
+  
+  library(reshape2)
+  library(dplyr)
+  count(snpmatrix, "nuc")
+  snpmatrix.t<-data.frame(t(snpmatrix))
+  colnames(snpmatrix.t)<-snpmatrix.t["nuc",]
+  snpmatrix.t$cell<-rownames(snpmatrix.t)
+  snpmatrix.t<-subset(snpmatrix.t, cell!="nuc")
+
+  tmp<-melt(snpmatrix.t, id.vars = "cell")
+  tmp2<- tmp %>% group_by(variable) %>% count(value)
+  openxlsx::write.xlsx(file = paste0(dirname(snpMatrixFile),"/NucleotidesPerCell.xlsx"), x = tmp2, rowNames=T, colNames=T)
+  #snpmatrix.melt<-melt(snpmatrix, variable.name = "nuc")
+  
+
+  library(hash)
+  #tmp3<-hash(keys=tmp$cell, values=list(tmp$variable, tmp$value))
+
+  cellMutationHash<-hash()
+  cellbcs<-unique(tmp$cell)
+  for (cellbc in cellbcs) {
+    if (!has.key(cellbc,cellMutationHash)) {
+      cellMutationHash[[cellbc]]<-"no-coverage"
+    }
+      bcmutations<-tmp[tmp$cell==cellbc,]
+    #if (nrow(bcmutations)!=4) { #check if the barcode has exactly 4 lines
+    #  warning(paste("Number of rows for barcode: ", cellbc, "not equal 4"))
+      
+    #}
+    for( i in rownames(bcmutations) ){
+      line<-bcmutations[i,]
+      if (line$value>0) {
+        if (cellMutationHash[[cellbc]]=="no-coverage") {#if no variable was set for this cell
+          cellMutationHash[[cellbc]]=as.character(line$variable)
+          #message(paste("set value: ",line$variable,"for cellBC: ", cellbc))
+        }
+        else {
+          cellMutationHash[[cellbc]]=paste(cellMutationHash[[cellbc]],line$variable, sep="/")
+        }
+      }
+      
+    }
+    #message(paste("Working on barcode: ", cellbc, "."))
+  }
+  
+  df<-data.frame(cell=keys(cellMutationHash), longReadAllele=values(cellMutationHash))
+  meta.data<-SeuratObj@meta.data
+  #meta.data$cell<-substring(rownames(meta.data), 1, nchar(rownames(meta.data))-2)
+  meta.data$cell<-gsub("-.*","",rownames(meta.data))
+
+  meta.data.merged<-merge(x = meta.data, df, by = "cell")
+  #rownames(meta.data.merged)<- rownames(meta.data)
+  SeuratObj$longReadAllele<-meta.data.merged$longReadAllele
+  return(SeuratObj)
+}
+
+
+```
+
+```{r}
+SeuratObjects<-readRDS("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/SeuratObject_AllSample_Cellranger.RDS")
+```
+
+
+```{r}
+SeuratObject.HF1 <- subset(SeuratObjects, idents = "HF1")
+SeuratObject.HF5 <- subset(SeuratObjects, idents = "HF5")
+SeuratObject.HF7 <- subset(SeuratObjects, idents = "HF7")
+SeuratObject.HF10 <- subset(SeuratObjects, idents = "HF10")
+SeuratObject.HF11 <- subset(SeuratObjects, idents = "HF11")
+```
+
+
+```{r}
+SeuratObject.HF1<-combineSeuratandSicelore(SeuratObject.HF1, "/media/Storage/combined_1st_2nd/CombinedLongRead_01_HF1/snps_combined/snp_snpmatrix.txt", "DNMT3A_HF1")
+SeuratObject.HF3<-combineSeuratandSicelore(SeuratObject.HF3, "/media/Storage/combined_1st_2nd/CombinedLongRead_03_HF3/snps_combined/snp_snpmatrix.txt", "TET2_HF3")
+SeuratObject.HF5<-combineSeuratandSicelore(SeuratObject.HF5,  "/media/Storage/combined_1st_2nd/FG2185_04_NB87_20210916_guppy_v5.0.12_hac_pass_trimmed//snps_combined/snp_snpmatrix.txt", "DNMT3A_HF5")
+SeuratObject.HF7<-combineSeuratandSicelore(SeuratObject.HF7, "/media/Storage/combined_1st_2nd/CombinedLongRead_02_HF7/snps_combined/snp_snpmatrix.txt", "DNMT3A_HF7")
+SeuratObject.HF10<-combineSeuratandSicelore(SeuratObject.HF10, "/media/Storage/combined_1st_2nd/FG2185_05_NB88_20210916_guppy_v5.0.12_hac_pass_trimmed/snps_combined/snp_snpmatrix.txt", "DNMT3A_HF10")
+SeuratObject.HF11<-combineSeuratandSicelore(SeuratObject.HF11, "/media/Storage/combined_1st_2nd/FG2185_06_NB89_20210916_guppy_v5.0.12_hac_pass_trimmed//snps_combined/snp_snpmatrix.txt", "DNMT3A_HF11")
+
+```
+
+```{r}
+table(SeuratObject.HF1$longReadAllele)
+table(SeuratObject.HF3$longReadAllele)
+table(SeuratObject.HF5$longReadAllele)
+table(SeuratObject.HF7$longReadAllele)
+table(SeuratObject.HF10$longReadAllele)
+table(SeuratObject.HF11$longReadAllele)
+```
+```{r}
+SeuratObject.HF1$mutation<-ifelse(SeuratObject.HF1$longReadAllele %in% c("T", "T/C"), "mutated", ifelse(SeuratObject.HF1$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+
+SeuratObject.HF3$mutation<-ifelse(SeuratObject.HF3$longReadAllele %in% c("G", "C/G"), "mutated", ifelse(SeuratObject.HF3$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+
+SeuratObject.HF5$mutation<-ifelse(SeuratObject.HF5$longReadAllele %in% c("T", "C/T"), "mutated", ifelse(SeuratObject.HF5$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+
+SeuratObject.HF7$mutation<-ifelse(SeuratObject.HF7$longReadAllele %in% c("A", "A/G"), "mutated", ifelse(SeuratObject.HF7$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+
+SeuratObject.HF10$mutation<-ifelse(SeuratObject.HF10$longReadAllele %in% c("T", "T/C"), "mutated", ifelse(SeuratObject.HF10$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+
+SeuratObject.HF11$mutation<-ifelse(SeuratObject.HF11$longReadAllele %in% c("A", "A/G"), "mutated", ifelse(SeuratObject.HF11$longReadAllele=="no-coverage", "no-coverage","non-mutated"))
+```
+
+
+
+
+
+
+```{r}
+library(Seurat)
+SeuratObjects<-merge(SeuratObject.HF1,SeuratObject.HF5,SeuratObject.HF7,SeuratObject.HF10,SeuratObject.HF11)
+
+```
+
+
+```{r}
+saveRDS(object = SeuratObjects, "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/SeuratObject_AllSample_Cellranger.RDS")
+```
+
+
+
+
+```{r}
+SeuratObjects.Wesley<-readRDS("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/WA.analysis/Heterozyg.analysis.generation/CH.integrated.ANALYSIS.OBJECT.RDS")
+
+meta.data<-SeuratObjects@meta.data
+
+
+table(SeuratObjects$orig.ident, SeuratObjects$mutation)
+DimPlot(SeuratObjects, group.by = "longReadAllele")
+
+Idents(SeuratObjects)<-"mutation"
+SeuratObjects.onlyWithCoverage<-subset(SeuratObjects, idents = c("mutated","non-mutated"))
+barplot(table( SeuratObjects.onlyWithCoverage$mutation, SeuratObjects.onlyWithCoverage$orig.ident))
+
+
+df <- prop.table(x = table(SeuratObjects.onlyWithCoverage$mutation, SeuratObjects.onlyWithCoverage$orig.ident), margin = 2)
+df <- as.data.frame(df)
+ggplot(df, aes(fill=Var1, y=Freq, x=Var2)) + 
+  geom_bar(stat="identity") +theme_classic()+ylab("Frequency")+xlab(label = "Sample")
+```
+
+
+
+#Coverage plot of Raw Reads at DNMT3A and TET2
+```{r}
+mutationLine.data <- data.frame(z = c(25240714,25240418, 25243930, 25246240,25239216), variable = c("HF1","HF2","HF3","HF4","HF5")) 
+
+
+coverage <- read.csv2(file = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/BamFiles.AllSamples.DNMT3A.coverage", header = T, sep = "\t")
+colnames(coverage)<-c("chr", "pos","HF1","HF7","HF5","HF10","HF11")
+coverage <- coverage[ , c("chr", "pos","HF1","HF5","HF7","HF10","HF11")]
+colnames(coverage)<-c("chr", "pos","HF1","HF2","HF3","HF4","HF5")
+
+
+df<-melt(coverage, id.vars = c("chr", "pos"), measure.vars = c("HF1","HF2","HF3","HF4","HF5"))
+
+
+df$valueLog<-log2(df$value)
+df.HF1<-df[df$variable=="HF1",]
+library(ggplot2)  
+
+p<-ggplot(data=df, aes(x=pos, y=valueLog)) + geom_area(aes(fill=chr))
+p<- p + geom_vline(data=mutationLine.data, aes(xintercept=z, group=variable), color="red", size=1)
+p <- p + facet_wrap(~ variable, ncol=1) + theme_classic() + theme(legend.position = "none") + labs(y="Log2(Read Counts)")
+p
+ggsave(p, filename = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/DNMT3A_RawReads_Log2Coverage.png", height = 8, width = 7, device = "png")
+
+
+
+```
+
+#Coverage plot of Molecules at DNMT3A and TET2
+```{r}
+coverage <- read.csv2(file = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/molecule.AllSamples.DNMT3A.coverage", header = T, sep = "\t")
+colnames(coverage)<-c("chr", "pos","HF1","HF7","HF5","HF10","HF11")
+coverage <- coverage[ , c("chr", "pos","HF1","HF5","HF7","HF10","HF11")]
+
+df<-melt(coverage, id.vars = c("chr", "pos"), measure.vars = c("HF1","HF5","HF7","HF10","HF11"))
+df.HF1<-df[df$variable=="HF1",]
+library(ggplot2)  
+p<-ggplot(data=df, aes(x=pos, y=value)) + geom_area(aes(fill=chr))
+p <- p + facet_wrap(~ variable, ncol=1)
+```
+
+#Callculate All Genes Coverage
+```{r}
+library(purrr)
+countFiles<-list("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_01_HF1/GEUS10xAttributes_umifound_.htseqCounts","/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_02_HF7/GEUS10xAttributes_umifound_.htseqCounts","/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_04_NB87_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.htseqCounts","/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_05_NB88_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.htseqCounts","/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_06_NB89_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.htseqCounts")
+
+countsTable<-lapply(countFiles, function(x){
+  V<- read.table(x)
+  colnames(V)<-c("Gene", "counts")
+  return(V)})
+
+sampleNames<-c("HF1","HF2","HF3","HF4","HF5")
+x<-0
+for (i in 1:5) {
+  
+  countsTable[[i]]$sample<-sampleNames[i]
+}
+
+counts<-reduce(countsTable, full_join) %>% group_by(sample) %>% mutate(percent=counts/sum(counts)) %>% mutate(TotalReadCount=sum(counts)) %>% ungroup() %>% group_by(Gene) %>% mutate(average=mean(percent))
+counts
+
+tableWesley<- counts |> filter(Gene %in% c("DNMT3A", "TET2")) %>% pivot_wider(names_from = Gene, id_cols = sample, values_from = c(counts, percent, TotalReadCount))
+tableWesley<-tableWesley[, c("sample", "TotalReadCount_DNMT3A", "counts_DNMT3A", "percent_DNMT3A","counts_TET2","percent_TET2")]
+colnames(tableWesley)<-c("sample", "TotalReadCount", "DNMT3A_Alignments", "%_DNMT3A","TET2_Alignments","%_TET2")
+tableWesley<- tableWesley %>% mutate(On_Target_Reads=`%_DNMT3A` + `%_TET2`)
+openxlsx::write.xlsx(tableWesley, file = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/LongRead_Sequencing_Metrics.xslx", rownames=T,colnames=T)
+topGenes<-  counts %>% ungroup() %>% filter(!startsWith(Gene, "__")) %>% top_n(wt = average, n=10*5) %>% arrange(average) %>% mutate(color=case_when(Gene %in% c("DNMT3A") ~ "DNMT3A", Gene %in% c("TET2") ~ "TET2", Gene=TRUE ~ "NO"))
+topGenes$Gene<-factor(topGenes$Gene, levels = unique(topGenes$Gene))
+
+
+ggplot(topGenes, aes(x=Gene, y = percent, fill=color))+
+  stat_summary(geom = "col", fun.y = mean) + stat_summary(geom = "errorbar", fun.data = mean_se, width=0.3) + 
+  geom_jitter(width = 0) + scale_y_continuous(labels = scales::percent_format()) + coord_flip() + theme_classic() + theme(legend.position = "none", axis.text=element_text(size=17) ) + scale_fill_manual(values = c( "#FFA0A0", "#D4D4D4","#90BFF9"))
+ggsave("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/GeneEnrichment.svg", device = "svg", height = 5, width = 5)
+```
+
