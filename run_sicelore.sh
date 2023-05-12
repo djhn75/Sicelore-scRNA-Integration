@@ -307,17 +307,17 @@ echo "Error: Previous Step Failed." | tee -a $LOGFILE
 fi
 
 # Call SNPs
-CURRENTOUTFILE=$SAMPLEFOLDER/snps_combined/snp_snpmatrix.txt
-echo "Running SNPMatrix on combined Reads [Step 12 of 10]" | tee -a $LOGFILE
-if [ -f "$CURRENTOUTFILE" ]; then
-    echo "$CURRENTOUTFILE exists." | tee -a $LOGFILE
-else 
-	mkdir $SAMPLEFOLDER/snps_combined
-	samtools merge -c -p $SAMPLEFOLDER/GEUS10xAttributes.bam $SAMPLEFOLDER/GEUS10xAttributes_umifound_.bam -o $SAMPLEFOLDER/GEUS10xAttributes.combined.bam --threads 20  --write-index
-	java -jar -Xmx170g -Xms170g /usr/local/bin/sicelore-master/Jar/Sicelore-2.0.jar SNPMatrix I=$SAMPLEFOLDER/GEUS10xAttributes.combined.bam CSV=$CELLOUT"filtered_feature_bc_matrix/barcodes.tsv" SNP=$VARFILE O=$SAMPLEFOLDER/snps_combined/
-fi
-if [ ! -f "$CURRENTOUTFILE" ]; then
-echo "Error: Previous Step Failed." | tee -a $LOGFILE
-	exit -1
-fi
+#CURRENTOUTFILE=$SAMPLEFOLDER/snps_combined/snp_snpmatrix.txt
+#echo "Running SNPMatrix on combined Reads [Step 12 of 10]" | tee -a $LOGFILE
+#if [ -f "$CURRENTOUTFILE" ]; then
+#    echo "$CURRENTOUTFILE exists." | tee -a $LOGFILE
+#else 
+#	mkdir $SAMPLEFOLDER/snps_combined
+#	samtools merge -c -p $SAMPLEFOLDER/GEUS10xAttributes.bam $SAMPLEFOLDER/GEUS10xAttributes_umifound_.bam -o $SAMPLEFOLDER/GEUS10xAttributes.combined.bam --threads 20  --write-index
+#	java -jar -Xmx170g -Xms170g /usr/local/bin/sicelore-master/Jar/Sicelore-2.0.jar SNPMatrix I=$SAMPLEFOLDER/GEUS10xAttributes.combined.bam CSV=$CELLOUT"filtered_feature_bc_matrix/barcodes.tsv" SNP=$VARFILE O=$SAMPLEFOLDER/snps_combined/
+#fi
+#if [ ! -f "$CURRENTOUTFILE" ]; then
+#echo "Error: Previous Step Failed." | tee -a $LOGFILE
+#	exit -1
+#trfi
 
