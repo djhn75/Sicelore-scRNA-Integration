@@ -232,3 +232,102 @@ ggplot(topGenes, aes(x=Gene, y = percent, fill=color))+
 ggsave("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/GeneEnrichment.svg", device = "svg", height = 5, width = 5)
 ```
 
+
+#Calculate mean UMI's per DNMT3A per sample
+```{r}
+#SeuratObjects.Wesley<-readRDS("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/WA.analysis/Heterozyg.analysis.generation/CH.integrated.ANALYSIS.OBJECT.RDS")
+SeuratObjects<-readRDS("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/SeuratObject_AllSample_Cellranger.RDS")
+library(purrr)
+#dont use this lines. Use combined sequence files
+# countFiles<-list("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_01_HF1/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv",
+# "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_02_HF7/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv",
+# "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_03_HF3/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv",
+# "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_04_NB87_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv",
+# "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_05_NB88_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv",
+# "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_06_NB89_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes_umifound_.umiCounts_2:25227855-25342590.tsv")
+
+countFiles<-list("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_01_HF1/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv",
+"/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_02_HF7/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv",
+"/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/CombinedLongRead_03_HF3/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv",
+"/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_04_NB87_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv",
+"/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_05_NB88_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv",
+"/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/FG2185_06_NB89_20210916_guppy_v5.0.12_hac_pass_trimmed/GEUS10xAttributes.combined.umiCounts_2:25227855-25342590.tsv")
+
+
+
+
+countsTables_unmatched<-lapply(countFiles, function(x){
+  V<- read.csv2(x, sep = "\t", header = T, strip.white = TRUE)
+  colnames(V)<-c("cellBC","nReads","nUniqueReads")
+  return(V[,1:3])})
+
+sampleNames<-c("HF1","HF2","HF3","HF4","HF5")
+sampleNames.orig<-c("HF1","HF7","HF3","HF5","HF10","HF11")
+countsTables<-countsTables_unmatched
+for (i in 1:6) {
+  
+  countsTables_unmatched[[i]]$sample<-sampleNames.orig[i]
+  barcodes_seurat<-WhichCells(SeuratObjects, idents = sampleNames.orig[i])
+  barcodes_seurat<-gsub("-.*","", barcodes_seurat)
+  countsTables[[i]]<-countsTables_unmatched[[i]][countsTables_unmatched[[i]]$cellBC %in% barcodes_seurat,]
+  
+}
+
+counts<-reduce(countsTables, full_join, ) %>% group_by(sample) %>% summarise(across(-cellBC,mean))
+
+openxlsx::write.xlsx(counts, file = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/DNMT3A_ReadLongReadCount.xlsx")
+
+#calc percentage of cells that have a long read at DNMT3A
+countsTables_unmatched_joined<-reduce(countsTables_unmatched, full_join, ) %>% group_by(sample)
+countsTables_joined<-reduce(countsTables, full_join, ) %>% group_by(sample)
+table(countsTables_joined$sample)
+names(table(countsTables_unmatched_joined$sample))
+df<-data.frame(sample=names(table(countsTables_unmatched_joined$sample)),
+               numberofCellsInSeurat=as.integer(table(SeuratObjects$orig.ident)),
+               unmatched=as.integer(table(countsTables_unmatched_joined$sample)),
+               matched=as.integer(table(countsTables_joined$sample)))
+df$percentCellwithLongReadAtDNMT3A<-df$matched/df$numberofCellsInSeurat
+openxlsx::write.xlsx(df, file = "/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/DNMT3A_CellWithAtLeast1LonReadAtDNMT3A.xlsx")
+```
+
+#Perform MILO analysis
+```{r}
+library(miloR)
+library(SingleCellExperiment)
+library(scater)
+library(dplyr)
+library(patchwork)
+library(Seurat)
+
+SeuratObjects.Wesley<-readRDS("/media/Helios_scStorage/Wesley/LongReadSequencing/combined_1st_2nd/WA.analysis/Heterozyg.analysis.generation/CH.integrated.ANALYSIS.OBJECT.RDS")
+
+SeuratObjects.Wesley$AnnotationMutation<- paste(SeuratObjects.Wesley$Annotation, SeuratObjects.Wesley$Mutation, sep = "-")
+
+
+table(SeuratObjects.Wesley$AnnotationMutation)
+sce <- as.SingleCellExperiment(SeuratObjects.Wesley)
+traj_milo <- Milo(sce)
+
+traj_milo <- buildGraph(traj_milo, k = 10, d = 30)
+traj_milo <- makeNhoods(traj_milo, prop = 0.1, k = 10, d=30, refined = TRUE)
+plotNhoodSizeHist(traj_milo)
+traj_milo <- countCells(traj_milo, meta.data = data.frame(colData(traj_milo)), sample="AnnotationMutation")
+
+df<-data.frame(colData(traj_milo))
+traj_design <- data.frame(colData(traj_milo))[,c("Annotation", "Mutation")]
+traj_design <- distinct(traj_design)
+traj_design
+
+
+traj_milo <- calcNhoodDistance(traj_milo, d=30)
+da_results <- testNhoods(traj_milo, design = ~ Mutation, design.df = traj_design)
+
+
+da_results %>%
+  arrange(- SpatialFDR) %>%
+  head()
+traj_milo <- buildNhoodGraph(traj_milo)
+plotUMAP(traj_milo) + plotNhoodGraphDA(traj_milo, da_results, alpha=0.05) +
+  plot_layout(guides="collect")
+
+```
